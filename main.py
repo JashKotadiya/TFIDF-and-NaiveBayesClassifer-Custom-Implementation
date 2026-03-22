@@ -46,7 +46,7 @@ def main():
     final_score = accuracy_score(Y_test, predictions)
 
     print("\n==========================================")
-    print(f"🎉 FINAL MODEL ACCURACY: {round(final_score * 100, 2)}% 🎉")
+    print(f"FINAL MODEL ACCURACY: {round(final_score * 100, 2)}% ")
     print("==========================================")
 
     print("\nSample Output (First 5 Test Transactions):")
