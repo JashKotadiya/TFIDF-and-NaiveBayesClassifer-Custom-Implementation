@@ -9,8 +9,8 @@ import re
 #   Custom Implementation of TFIDF algorithm    # 
 ##################################################
 class TFIDFAnalyzer: 
-   def __init__(self, csvPath: str) -> None:
-      self.dataFrame = pandas.read_csv(csvPath)
+   def __init__(self) -> None:
+      self.cleanedTransactionsList = list()
       self.uniqueWords = set()
       self.wordDictionarySplit = dict() 
       self.termFrequencyMatrix = None
@@ -34,15 +34,12 @@ class TFIDFAnalyzer:
       return text
    
    def buildVocabulary(self):
-      # Apply the cleanTransaction on the Company column
-      self.dataFrame["cleaned"] = self.dataFrame["Company"].apply(self.cleanTransaction)
-
-      # Iterates through the cleaned column of the companies in the self.dataFrame, and adds each word into a set 
+      # Iterates through the cleaned transactions list, instead of a data frame 
       # This was initially implemented as adding the words to a list using the extend() function and then converting to a set() 
       # but this previous method had more space complexitiy because say if you had a column of 100000 words, python would have to copy all of the words you wanted to add using extend() 
       # then when we needed more space python would have to keep asking a for a lot of ram from the computer 
       # All just to delete a lot of the words later 
-      for string in self.dataFrame["cleaned"]: 
+      for string in self.cleanedTransactionsList:
          words = string.split()
          for word in words: 
             self.uniqueWords.add(word) # type: ignore (the warning is wrong because uniqueWords is initalized to a set and then converted to a list)
@@ -56,21 +53,21 @@ class TFIDFAnalyzer:
 
       # This generates our termFrequency, intially as a matrix of all zeros, because if we instead initalize a numpy arr because 
       # they are fixed size, everytime we have to add a new item we have to copy the entire array which is not good 
-      self.termFrequencyMatrix = numpy.zeros((len(self.dataFrame["cleaned"]),len(self.wordDictionarySplit)))
+      self.termFrequencyMatrix = numpy.zeros((len(self.cleanedTransactionsList),len(self.wordDictionarySplit)))
 
-      # Function to find the number of times term t appears in transaction d 
-      # Index is the index of the transaction
-      # Deprecated 
+   # Function to find the number of times term t appears in transaction d 
+   # Index is the index of the transaction
+   # Deprecated 
    @DeprecationWarning
    def countTermInTransaction(self, t: str, index: int) -> int: 
-      return (self.dataFrame["cleaned"][index]).count(t)
+      return (self.cleanedTransactionsList[index]).count(t)
 
    # Return number of words in trasnaction t 
    # Index is the index of the transaction
    # Deprecated 
    @DeprecationWarning
    def totalWordsInTransaction(self, index: int) -> int:
-      return len((self.dataFrame["cleaned"][index]).split())
+      return len((self.cleanedTransactionsList[index]).split())
 
    # Calculate term frequency - which is the probabilty of a term appearing in a specific document d 
    # The reason we use propportion and not raw count is because raw count for things like uber trip and uber trip san fran airport rode 
@@ -84,7 +81,7 @@ class TFIDFAnalyzer:
    # After each transaction, divide by length of the transaction 
    # Repeat for all transactions 
    def termFrequency(self): 
-      cleanedTransactionsList = list(self.dataFrame["cleaned"])
+      cleanedTransactionsList = self.cleanedTransactionsList
       for i in range(0, len(cleanedTransactionsList)):
          words = cleanedTransactionsList[i].split()
          totalWordLength = len(words)
@@ -116,9 +113,9 @@ class TFIDFAnalyzer:
    # The log which is log base e, is used because without the log, rare words would get very big values, so taking the log compresses the scale
    def inverseDocumentFrequency(self): 
       self.inverseTermFrequencyVector = numpy.zeros(len(self.wordDictionarySplit))
-      N =  len(self.dataFrame["cleaned"])
+      N =  len(self.cleanedTransactionsList)
 
-      cleanedTransactionsList = list(self.dataFrame["cleaned"])
+      cleanedTransactionsList = self.cleanedTransactionsList
       for i in range(0, len(cleanedTransactionsList)):
          words = cleanedTransactionsList[i].split()
          words = set(words)
@@ -131,16 +128,37 @@ class TFIDFAnalyzer:
 
       return numpy.log(N / self.inverseTermFrequencyVector)
    
-   def fit(self): 
+   # Here we training the TFIDF anaylzer, we give it the data and it cleans the data 
+   # Builds the vocab and calcualtes termFrequency, inverseDocumentFrequency and gives us the final tfIDF matrix
+   # This is preparing the training data for the model, the model will have a one to one correspondence with the matrix here, ie its row index and column index 0 will be for the same 
+   # word and same transaction 
+   def fitTransform(self, X_train_raw: list): 
+      self.cleanedTransactionsList = []
+      for i in range(0, len(X_train_raw)):
+         self.cleanedTransactionsList.append(self.cleanTransaction(X_train_raw[i]))
+
       self.buildVocabulary()
       self.termFrequency()
-      self.tfIDF = numpy.multiply(self.termFrequencyMatrix, self.inverseDocumentFrequency()) # type: ignore (this warning is wrong because we intialize this matrix always to a numpy array)
-
    # Final matrix giving us the values for the tfIDF algorithm 
    # We mutiply the tf and idf scores together becuase we want a word to be important iff its rare in in document and its rare in the whole dictionary 
    # tf tells us if a term is rare in a document and idf tells us if the term is rare among all words 
    # Since mutiplication enforces the rule that small x small is small and big times big is big and big x small is small, it keeps rare words rare and common words common
    # We could use addition insetad but mutiplication maeks the difference more clear
+      self.inverseTermFrequencyVector = self.inverseDocumentFrequency()
+      self.tfIDF = numpy.multiply(self.termFrequencyMatrix, self.inverseTermFrequencyVector) # type: ignore (this warning is wrong because we intialize this matrix always to a numpy array)
+      return self.tfIDF
+   
+   # Here we prepare the testing data to input into the model, 
+   def transform(self, X_test_raw: list): 
+      self.cleanedTransactionsList = [] # Reset it to empty
+      for i in range(0, len(X_test_raw)):
+         self.cleanedTransactionsList.append(self.cleanTransaction(X_test_raw[i]))
+      self.termFrequencyMatrix = numpy.zeros((len(self.cleanedTransactionsList),len(self.wordDictionarySplit)))
+      self.termFrequency()
+      # Need to change the second part of this 
+      return numpy.multiply(self.termFrequencyMatrix, self.inverseTermFrequencyVector)
+
+
    # Example transactions (cleaned):
    # 1: "uber trip"
    # 2: "uber eats"
@@ -183,14 +201,13 @@ class TFIDFAnalyzer:
    def printResults(self):
       print(pandas.DataFrame(self.tfIDF))
       print(numpy.sum(self.tfIDF[:, 9])) # type: ignore (this warning is wrong)
-      print(self.dataFrame["cleaned"])
-      print(self.dataFrame["Category"])
+   
  
 
 
-analyzer = TFIDFAnalyzer("bank_transactions.csv")  
-analyzer.fit()
-analyzer.printResults()      
+# analyzer = TFIDFAnalyzer("bank_transactions.csv")  
+# analyzer.fit()
+# analyzer.printResults()      
 
 
 
